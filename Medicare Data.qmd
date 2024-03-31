@@ -1,0 +1,468 @@
+---
+title: "Medicare Data"
+format: html
+editor: visual
+---
+
+
+
+## Running Code
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+```{r}
+# Cleaning Data
+
+# Drop rows where 'Tot_Suplr_Benes' is NA
+health_data <- data[!is.na(data$Tot_Suplr_Benes), ]
+
+summary(health_data[, c("Tot_Suplrs", "Tot_Suplr_Benes", "Tot_Suplr_Clms", "Tot_Suplr_Srvcs", "Avg_Suplr_Sbmtd_Chrg", "Avg_Suplr_Mdcr_Alowd_Amt", "Avg_Suplr_Mdcr_Pymt_Amt")])
+
+
+
+
+```
+
+## Demography:
+
+In this Medicare data set, we got approximately 1.5 million data with 34 different variables. After cleaning the data set based on missing values we worked with 3,24,793 data. Among the 34 variables we mostly emphasized on 6-7 variables. Among them Individual provider, total suppliers claimed by the provider, average total charged submitted by supplier and payment made by medicare are most important to analysis and find out suspicious Provider or anomalies.
+
+This plot showing that most of the provider are male (66.8%) in this data set.
+
+```{r}
+
+
+# Count frequencies of each gender category
+gender_counts <- table(health_data$Rfrg_Prvdr_Gndr)
+
+# Calculate percentages
+gender_percentages <- prop.table(gender_counts) * 100
+
+# Create a pie chart
+pie(gender_percentages,
+    main = "Gender Distribution of Provider",
+    labels = paste(names(gender_percentages), " (", round(gender_percentages, 1), "%)"),
+    col = rainbow(length(gender_percentages)))
+
+# Add a legend
+legend("topright", legend = names(gender_counts), fill = rainbow(length(gender_counts)))
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+#| echo: false
+
+library(dplyr)
+library(ggplot2)
+
+
+# Correlation Analysis
+correlation_matrix <- cor(health_data[, c("Tot_Suplrs", "Tot_Suplr_Benes", "Tot_Suplr_Clms", "Tot_Suplr_Srvcs", "Avg_Suplr_Sbmtd_Chrg", "Avg_Suplr_Mdcr_Alowd_Amt", "Avg_Suplr_Mdcr_Pymt_Amt")])
+print(correlation_matrix)
+
+# Visualization
+# Example: Histogram of Avg_Suplr_Sbmtd_Chrg
+ggplot(health_data, aes(x = Avg_Suplr_Sbmtd_Chrg)) +
+  geom_histogram(binwidth = 1000, fill = "skyblue", color = "black") +
+  labs(title = "Histogram of Avg_Suplr_Sbmtd_Chrg", x = "Avg_Suplr_Sbmtd_Chrg", y = "Frequency")
+
+# Outlier Detection
+# Example: Boxplot of Tot_Suplr_Benes with outliers
+boxplot(health_data$Tot_Suplr_Benes, main = "Boxplot of Tot_Suplr_Benes")
+
+# Comparative Analysis
+# Example: Compare Avg_Suplr_Mdcr_Alowd_Amt across different categories (if applicable)
+ggplot(health_data, aes(x = factor(Avg_Suplr_Sbmtd_Chrg), y = Avg_Suplr_Mdcr_Pymt_Amt)) +
+  geom_boxplot() +
+  labs(title = "Comparison of Avg_Suplr_Mdcr_Alowd_Amt by Category", x = "Avg_Suplr_Sbmtd_Chrg", y = "Avg_Suplr_Mdcr_Pymt_Amt")
+
+
+```
+
+## Methodology:
+
+To find out which provider order most of the supplies and what's the maximum amount charged by the supplier, we grouped the data and got high billing and high frequency providers from Average_supplier_submitted_charge and Total_amount_suppliers_claimed variable.
+
+After that we joined the data set for further analysis
+
+```{r}
+#| echo: false
+
+library(dplyr)
+
+# Calculate summary statistics of billing amounts by provider
+billing_summary <- health_data %>%
+  group_by(Rfrg_NPI) %>%
+  summarize(Avg_Suplr_Sbmtd_Chrg_mean = mean(Avg_Suplr_Sbmtd_Chrg, na.rm = TRUE),
+            Avg_Suplr_Sbmtd_Chrg_max = max(Avg_Suplr_Sbmtd_Chrg, na.rm = TRUE))
+
+# Identify providers with high billing amounts compared to their peers
+high_billing_providers <- billing_summary %>%
+  filter(Avg_Suplr_Sbmtd_Chrg_mean > quantile(Avg_Suplr_Sbmtd_Chrg_mean, 0.95, na.rm = TRUE))
+
+# View the list of providers with high billing amounts
+print(high_billing_providers)
+
+
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
+
+```{r}
+#| echo: false
+# Calculate the number of claims submitted by each provider
+claims_summary <- health_data %>%
+  group_by(Rfrg_NPI) %>%
+  summarize(total_claims = n_distinct(Tot_Suplr_Clms))
+
+# Identify providers with a high frequency of claims
+high_frequency_providers <- claims_summary %>%
+  filter(total_claims > quantile(total_claims, 0.95))
+
+# View the list of providers with a high frequency of claims
+print(high_frequency_providers)
+
+```
+
+```{r}
+#| echo: false
+
+library(dplyr)
+
+# Perform an inner join based on the common key (e.g., Provider_ID)
+joined_table <- inner_join(high_frequency_providers, high_billing_providers, by = "Rfrg_NPI")
+
+
+library(ggplot2)
+
+# Create a plot using ggplot2
+ggplot(joined_table, aes(x = total_claims, y = Avg_Suplr_Sbmtd_Chrg_mean, fill = Rfrg_NPI)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Comparison of High Frequency Providers and High Billing Providers",
+       x = "total_claims", y = "Avg_Suplr_Sbmtd_Chrg_mean") +
+  theme_minimal()
+
+
+```
+
+```{r}
+#| echo: false
+
+library(dplyr)
+library(ggplot2)
+
+# Perform an inner join based on the common key (e.g., Provider_ID)
+joined_table <- inner_join(high_frequency_providers, high_billing_providers, by = "Rfrg_NPI")
+
+# Create a plot using ggplot2
+ggplot(joined_table, aes(x = total_claims, y = Avg_Suplr_Sbmtd_Chrg_mean)) +
+  geom_point() +  # Use geom_point() for a scatter plot
+  labs(title = "Comparison of High Frequency Providers and High Billing Providers",
+       x = "Total Claims", y = "Average Submitted Charge") +
+  theme_minimal()
+
+```
+
+```{r}
+#| echo: false
+
+# Filter the joined_table to identify providers with outliers
+outlier_providers <- joined_table %>%
+  filter(total_claims > 30 | Avg_Suplr_Sbmtd_Chrg_mean > 2000)
+
+library(ggplot2)
+# Create a scatter plot
+ggplot(joined_table, aes(x = total_claims, y = Avg_Suplr_Sbmtd_Chrg_mean)) +
+  geom_point(alpha = 0.5) +  # Add points with transparency
+  geom_point(data = outlier_providers, aes(color = "red"), size = 3) +  # Highlight outlier providers in red
+  labs(title = "Outlier Providers",
+       x = "Total Claims", y = "Average Submitted Charge",
+       color = "Outlier") +  # Add legend label
+  scale_color_manual(values = c("red" = "red")) +  # Define legend colors
+  theme_minimal()
+
+
+#| echo: false
+
+library(dplyr)
+
+# Adjust the column names in the select() function based on the actual column names
+outlier_table <- outlier_providers %>%
+  inner_join(health_data, by = "Rfrg_NPI") %>%
+  select(Rfrg_Prvdr_First_Name, Rfrg_Prvdr_Gndr, Rfrg_Prvdr_City, Rfrg_Prvdr_State_Abrvtn, 
+         Rfrg_Prvdr_Type, Rfrg_Prvdr_Type_Flag,HCPCS_CD,HCPCS_Desc, BETOS_Lvl, BETOS_Desc, Suplr_Rentl_Ind,
+         Tot_Suplrs, Tot_Suplr_Benes, Tot_Suplr_Clms, Tot_Suplr_Srvcs,
+         Avg_Suplr_Sbmtd_Chrg, Avg_Suplr_Mdcr_Alowd_Amt, Avg_Suplr_Mdcr_Pymt_Amt)
+
+# View the resulting table
+print(outlier_table)
+
+
+# Select specific columns and get unique rows
+unique_data <- outlier_table %>%
+  distinct(Rfrg_Prvdr_Type, HCPCS_Desc, HCPCS_CD, BETOS_Lvl, BETOS_Desc)
+
+# View the unique data
+print(unique_data)
+
+
+```
+
+```{r}
+#| echo: false
+library(ggplot2)
+
+# Create a scatterplot
+ggplot(outlier_table, aes(x = Rfrg_Prvdr_City, y = Rfrg_Prvdr_State_Abrvtn)) +
+  geom_point(aes(color = Rfrg_Prvdr_First_Name)) +
+  labs(title = "Providers by City and State", x = "City", y = "State") +
+  theme_minimal()
+
+```
+
+```{r}
+#| echo: false
+
+library(ggplot2)
+
+# Create a plot using ggplot2
+ggplot(joined_table, aes(x = total_claims, y = Avg_Suplr_Sbmtd_Chrg_max, fill = Rfrg_NPI)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Comparison of High Frequency Providers and High Billing Providers",
+       x = "total_claims", y = "Avg_Suplr_Sbmtd_Chrg_max") +
+  theme_minimal()
+
+```
+
+##New with Max
+
+```{r}
+#| echo: false
+
+library(dplyr)
+library(ggplot2)
+
+# Perform an inner join based on the common key (e.g., Provider_ID)
+joined_table <- inner_join(high_frequency_providers, high_billing_providers, by = "Rfrg_NPI")
+
+# Create a plot using ggplot2
+ggplot(joined_table, aes(x = total_claims, y = Avg_Suplr_Sbmtd_Chrg_max)) +
+  geom_point() +  # Use geom_point() for a scatter plot
+  labs(title = "Comparison of High Frequency Providers and High Billing Providers",
+       x = "Total Claims", y = "Average Submitted Charge") +
+  theme_minimal()
+
+```
+
+## With outlier
+
+This scatter plot showing us some anomalous data point who deviated a lot from the average value. We figured out, total number of claimed more than 30 and average submitted charge more than 2000 as outlier for this data set who are suspicious in this scenario.
+
+```{r}
+#| echo: false
+
+# Filter the joined_table to identify providers with outliers
+outlier_providers <- joined_table %>%
+  filter(total_claims > 30 | Avg_Suplr_Sbmtd_Chrg_mean > 2000)
+
+library(ggplot2)
+# Create a scatter plot
+ggplot(joined_table, aes(x = total_claims, y = Avg_Suplr_Sbmtd_Chrg_mean)) +
+  geom_point(alpha = 0.5) +  # Add points with transparency
+  geom_point(data = outlier_providers, aes(color = "red"), size = 3) +  # Highlight outlier providers in red
+  labs(title = "Outlier Providers",
+       x = "Total Claims", y = "Average Submitted Charge",
+       color = "Outlier") +  # Add legend label
+  scale_color_manual(values = c("red" = "red")) +  # Define legend colors
+  theme_minimal()
+
+```
+
+```{r}
+#| echo: false
+
+library(dplyr)
+
+# Adjust the column names in the select() function based on the actual column names
+outlier_table <- outlier_providers %>%
+  inner_join(health_data, by = "Rfrg_NPI") %>%
+  select(Rfrg_Prvdr_First_Name, Rfrg_Prvdr_Gndr, Rfrg_Prvdr_City, Rfrg_Prvdr_State_Abrvtn, 
+         Rfrg_Prvdr_Type, Rfrg_Prvdr_Type_Flag,HCPCS_CD,HCPCS_Desc, BETOS_Lvl, BETOS_Desc, Suplr_Rentl_Ind,
+         Tot_Suplrs, Tot_Suplr_Benes, Tot_Suplr_Clms, Tot_Suplr_Srvcs,
+         Avg_Suplr_Sbmtd_Chrg, Avg_Suplr_Mdcr_Alowd_Amt, Avg_Suplr_Mdcr_Pymt_Amt)
+
+# View the resulting table
+print(outlier_table)
+
+
+# Select specific columns and get unique rows
+unique_data <- outlier_table %>%
+  distinct(Rfrg_Prvdr_Type, HCPCS_Desc, HCPCS_CD, BETOS_Lvl, BETOS_Desc)
+
+# View the unique data
+print(unique_data)
+```
+
+## Suspicious Provider
+
+With that anomalous data point, we found these 8 providers who ordered those high charged amount of supplies.
+
+This plot showing the provider's city and type of their specialized sector. We can see, 8 person are from different city but 5 of them are specialized on Physical Medicine and Rehabilitation.
+
+```{r}
+#| echo: false
+library(ggplot2)
+
+# Create a scatterplot
+ggplot(outlier_table, aes(x = Rfrg_Prvdr_Type , y = Rfrg_Prvdr_City )) +
+  geom_point(aes(color = Rfrg_Prvdr_First_Name)) +
+  labs(title = "Providers by City and Specialization", x = "Type", y = "City") +
+  theme_minimal()
+```
+
+This bar graph showing, the highest amount of supplier submitted charge was ordered under the provider LORA and highest amount that Medicare made payment was ordered by Paulinder
+
+Both the highest amount was under Paulinder
+
+```{r}
+library(ggplot2)
+
+# Create a bar graph
+ggplot(outlier_table, aes(x = Rfrg_Prvdr_First_Name, y = Avg_Suplr_Sbmtd_Chrg)) +
+  geom_bar(stat = "identity", aes(fill = "Submitted Charges"), position = "dodge") +
+  geom_bar(stat = "identity", aes(y = Avg_Suplr_Mdcr_Pymt_Amt, fill = "Medicare Payment Amount"), position = "dodge") +
+  labs(title = "Submitted Charges and Medicare Payment Amount under the individual Provider",
+       x = "Provider", y = "Amount") +
+  scale_fill_manual(values = c("Submitted Charges" = "skyblue", "Medicare Payment Amount" = "pink")) +
+  theme_minimal()
+
+```
+
+```{r}
+library(ggplot2)
+
+# Calculate percentage values
+outlier_table <- outlier_table %>%
+  mutate(Submitted_Charges_Percentage = Avg_Suplr_Sbmtd_Chrg / sum(Avg_Suplr_Sbmtd_Chrg) * 100,
+         Medicare_Payment_Percentage = Avg_Suplr_Mdcr_Pymt_Amt / sum(Avg_Suplr_Mdcr_Pymt_Amt) * 100)
+
+# Create a bar graph
+ggplot(outlier_table, aes(x = Rfrg_Prvdr_First_Name)) +
+  geom_bar(aes(y = Avg_Suplr_Sbmtd_Chrg, fill = "Submitted Charges"), stat = "identity", position = "dodge") +
+  geom_bar(aes(y = Avg_Suplr_Mdcr_Pymt_Amt, fill = "Medicare Payment Amount"), stat = "identity", position = "dodge") +
+  geom_text(aes(y = Avg_Suplr_Sbmtd_Chrg + 50, label = paste0(round(Submitted_Charges_Percentage), "%")), 
+            position = position_dodge(width = 0.9), vjust = -0.5, color = "black", size = 3) +
+  geom_text(aes(y = Avg_Suplr_Mdcr_Pymt_Amt + 50, label = paste0(round(Medicare_Payment_Percentage), "%")), 
+            position = position_dodge(width = 0.9), vjust = -0.5, color = "black", size = 3) +
+  labs(title = "Average Submitted Charges and Medicare Payment Amount by Provider",
+       x = "Provider", y = "Amount") +
+  scale_fill_manual(values = c("Submitted Charges" = "skyblue", "Medicare Payment Amount" = "pink")) +
+  theme_minimal()
+
+
+```
+
+```{r}
+library(ggplot2)
+
+# Create a side-by-side bar graph for "Submitted Charges" under each individual provider
+submitted_charges_plot <- ggplot(outlier_table, aes(x = Rfrg_Prvdr_First_Name, y = Avg_Suplr_Sbmtd_Chrg)) +
+  geom_bar(stat = "identity", fill = "skyblue", position = position_dodge(width = 0.9)) +
+  labs(title = "Submitted Charges under each Provider",
+       x = "Provider", y = "Submitted Charges") +
+  theme_minimal()
+
+# Create a side-by-side bar graph for "Medicare Payment Amount" under each individual provider
+medicare_payment_plot <- ggplot(outlier_table, aes(x = Rfrg_Prvdr_First_Name, y = Avg_Suplr_Mdcr_Pymt_Amt)) +
+  geom_bar(stat = "identity", fill = "pink", position = position_dodge(width = 0.9)) +
+  labs(title = "Medicare Payment Amount under each Provider",
+       x = "Provider", y = "Medicare Payment Amount") +
+  theme_minimal()
+
+# Display both plots side by side
+library(gridExtra)
+grid.arrange(submitted_charges_plot, medicare_payment_plot, ncol = 2)
+
+
+
+
+
+```
+
+```{r}
+library(ggplot2)
+
+# Create side-by-side bar graphs for "Submitted Charges" and "Medicare Payment Amount"
+ggplot(outlier_table, aes(x = Rfrg_Prvdr_First_Name)) +
+  geom_bar(aes(y = Avg_Suplr_Sbmtd_Chrg, fill = "Submitted Charges"), position = position_dodge(width = 0.9), stat = "identity") +
+  labs(title = "Submitted Charges under the individual Provider",
+       x = "Provider", y = "Submitted Charges") +
+  scale_fill_manual(values = c("Submitted Charges" = "skyblue")) +
+  facet_wrap(~Rfrg_Prvdr_First_Name, nrow = 1) +
+  theme_minimal()
+
+ggplot(outlier_table, aes(x = Rfrg_Prvdr_First_Name)) +
+  geom_bar(aes(y = Avg_Suplr_Mdcr_Pymt_Amt, fill = "Medicare Payment Amount"), position = position_dodge(width = 0.9), stat = "identity") +
+  labs(title = "Medicare Payment Amount under the individual Provider",
+       x = "Provider", y = "Medicare Payment Amount") +
+  scale_fill_manual(values = c("Medicare Payment Amount" = "pink")) +
+  facet_wrap(~Rfrg_Prvdr_First_Name, nrow = 1) +
+  theme_minimal()
+
+```
+
+##OLD work_Unnecessary
+
+```{r}
+#| echo: false
+
+# Plot the distribution of billing amounts
+ggplot(health_data, aes(x = Avg_Suplr_Sbmtd_Chrg )) +
+  geom_histogram(binwidth = 1000, fill = "skyblue", color = "black") +
+  labs(title = "Distribution of Billing Amounts",
+       x = "Billing Amount",
+       y = "Rfrg_NPI")
+
+```
+
+```{r}
+#| echo: false
+# Calculate Quartiles
+Q1 <- quantile(Health_data$Tot_Suplr_Benes, 0.25)
+Q3 <- quantile(Health_data$Tot_Suplr_Benes, 0.75)
+
+# Calculate Interquartile Range (IQR)
+IQR <- Q3 - Q1
+
+# Define Outlier Bounds
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+
+# Identify Outliers
+outliers <- Health_data$Tot_Suplr_Benes[Health_data$Tot_Suplr_Benes < lower_bound | Health_data$Tot_Suplr_Benes > upper_bound]
+
+# Create a boxplot to visualize outliers in the 'Tot_Suplr_Benes' column
+boxplot(Health_data$Tot_Suplr_Benes, main = "Boxplot of Tot_Suplr_Benes", ylab = "Tot_Suplr_Benes")
+
+# Add points for identified outliers
+points(which(Health_data$Tot_Suplr_Benes %in% outliers), outliers, col = "red", pch = 16)
+
+# Add legend for outliers
+legend("topleft", legend = "Outliers", pch = 16, col = "red", bty = "n")
+
+
+
+```
+
+```{r}
+#| echo: false
+
+```
